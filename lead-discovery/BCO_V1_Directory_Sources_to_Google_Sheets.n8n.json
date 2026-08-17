@@ -1,0 +1,252 @@
+{
+  "name": "BCO V1 - Directory Sources to Google Sheets",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "2a32df0c-f993-4762-b246-5f2589600c47",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst sources = [\n  {\n    source: 'Kanata North BA',\n    actorInput: {\n      runMode: 'PRODUCTION',\n      startUrls: [{ url: 'https://www.kanatanorthba.com/member-directory/' }],\n      respectRobotsTxtFile: true,\n      linkSelector: '',\n      globs: [],\n      pseudoUrls: [],\n      excludes: [],\n      pageFunction: \"\\nasync function pageFunction(context) {\\n    const clean = (v) => (v || '').replace(/\\\\s+/g, ' ').trim();\\n    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));\\n\\n    // Expand the directory. Stop when the button disappears or no longer changes the page.\\n    for (let i = 0; i < 40; i++) {\\n        const button = [...document.querySelectorAll('button, a')]\\n            .find((el) => /load more/i.test(clean(el.textContent)) && !el.disabled);\\n        if (!button) break;\\n        const before = document.body.innerText.length;\\n        button.click();\\n        await sleep(1200);\\n        if (document.body.innerText.length <= before) break;\\n    }\\n\\n    const records = [];\\n    for (const heading of [...document.querySelectorAll('h2')]) {\\n        const organization = clean(heading.textContent);\\n        if (!organization || /questions|kanata north ba/i.test(organization)) continue;\\n\\n        let card = heading;\\n        for (let i = 0; i < 8 && card; i++, card = card.parentElement) {\\n            const t = clean(card.innerText);\\n            if (/Location:/i.test(t) && (/Website:|Phone:|Email:/i.test(t))) break;\\n        }\\n        if (!card) continue;\\n\\n        const text = clean(card.innerText);\\n        const website = [...card.querySelectorAll('a[href]')]\\n            .map((a) => a.href)\\n            .find((href) =>\\n                /^https?:/i.test(href) &&\\n                !/kanatanorthba\\\\.com|google\\\\.com|mailto:|tel:/i.test(href)\\n            ) || '';\\n\\n        const profileUrl = [...card.querySelectorAll('a[href]')]\\n            .map((a) => ({ href: a.href, text: clean(a.textContent) }))\\n            .find((a) => /learn more/i.test(a.text))?.href || context.request.url;\\n\\n        const email = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\\\.[A-Z]{2,}/i) || [''])[0];\\n        const phone = (text.match(/(?:\\\\+?1[\\\\s.-]?)?\\\\(?\\\\d{3}\\\\)?[\\\\s.-]\\\\d{3}[\\\\s.-]\\\\d{4}/) || [''])[0];\\n        const address = clean((text.match(/Location:\\\\s*(.*?)(?:Website:|Phone:|Email:|$)/i) || ['', ''])[1]);\\n        const paragraphs = [...card.querySelectorAll('p')].map((p) => clean(p.textContent)).filter(Boolean);\\n        const description = paragraphs.sort((a, b) => b.length - a.length)[0] || '';\\n\\n        records.push({\\n            source: 'Kanata North BA',\\n            organization,\\n            website,\\n            publicPhone: phone,\\n            generalEmail: email,\\n            address,\\n            description,\\n            profileUrl,\\n            sourcePageUrl: context.request.url,\\n            dateScraped: new Date().toISOString()\\n        });\\n    }\\n    return records;\\n}\\n\",\n      injectJQuery: false,\n      proxyConfiguration: { useApifyProxy: true },\n      headless: true,\n      downloadMedia: false,\n      downloadCss: false,\n      maxPagesPerCrawl: 1,\n      maxRequestRetries: 2,\n      waitUntil: ['networkidle2']\n    }\n  },\n  {\n    source: 'Invest Ottawa',\n    actorInput: {\n      runMode: 'PRODUCTION',\n      startUrls: [{ url: 'https://techjobfinder.investottawa.ca/companies' }],\n      respectRobotsTxtFile: true,\n      linkSelector: '',\n      globs: [],\n      pseudoUrls: [],\n      excludes: [],\n      pageFunction: \"\\nasync function pageFunction(context) {\\n    const clean = (v) => (v || '').replace(/\\\\s+/g, ' ').trim();\\n    await new Promise((resolve) => setTimeout(resolve, 2500));\\n\\n    const links = [...document.querySelectorAll('a[href]')]\\n        .filter((a) => /\\\\/companies\\\\//i.test(a.href))\\n        .filter((a, i, arr) => arr.findIndex((b) => b.href === a.href) === i);\\n\\n    const records = [];\\n    for (const link of links) {\\n        let card = link.closest('article, li, [class*=\\\"company\\\"], [class*=\\\"card\\\"]') || link.parentElement;\\n        for (let i = 0; i < 5 && card && clean(card.innerText).length < 40; i++) card = card.parentElement;\\n        const text = clean((card || link).innerText);\\n        if (!text) continue;\\n\\n        const heading = (card || link).querySelector('h1,h2,h3,h4,h5,h6');\\n        let organization = clean(heading?.textContent);\\n        if (!organization) {\\n            organization = clean(link.textContent)\\n                .replace(/\\\\b\\\\d+\\\\s+jobs?\\\\b/ig, '')\\n                .replace(/\\\\bview company\\\\b/ig, '')\\n                .trim();\\n        }\\n        if (!organization || /explore companies|search jobs|talent network/i.test(organization)) continue;\\n\\n        const description = text\\n            .replace(organization, '')\\n            .replace(/\\\\b\\\\d+\\\\s+jobs?\\\\b/ig, '')\\n            .replace(/\\\\bview company\\\\b/ig, '')\\n            .trim();\\n\\n        records.push({\\n            source: 'Invest Ottawa',\\n            organization,\\n            website: '',\\n            publicPhone: '',\\n            generalEmail: '',\\n            address: 'Ottawa, Ontario',\\n            description,\\n            profileUrl: link.href,\\n            sourcePageUrl: context.request.url,\\n            dateScraped: new Date().toISOString()\\n        });\\n    }\\n    return records;\\n}\\n\",\n      injectJQuery: false,\n      proxyConfiguration: { useApifyProxy: true },\n      headless: true,\n      downloadMedia: false,\n      downloadCss: false,\n      maxPagesPerCrawl: 1,\n      maxRequestRetries: 2,\n      waitUntil: ['networkidle2']\n    }\n  },\n  {\n    source: 'Ottawa Board of Trade',\n    actorInput: {\n      runMode: 'PRODUCTION',\n      startUrls: [{ url: 'https://business.ottawabot.ca/list/ql/technology-14.htm' }],\n      respectRobotsTxtFile: true,\n      linkSelector: '',\n      globs: [],\n      pseudoUrls: [],\n      excludes: [],\n      pageFunction: \"\\nasync function pageFunction(context) {\\n    const clean = (v) => (v || '').replace(/\\\\s+/g, ' ').trim();\\n    const records = [];\\n    const headings = [...document.querySelectorAll('h3,h4,h5')];\\n\\n    for (const heading of headings) {\\n        const organization = clean(heading.textContent);\\n        if (!organization || /technology|ottawa board of trade|business directory/i.test(organization)) continue;\\n\\n        let card = heading;\\n        for (let i = 0; i < 7 && card; i++, card = card.parentElement) {\\n            const t = clean(card.innerText);\\n            if (t.length > organization.length + 15 && (/\\\\d{3}[-\\\\s)]\\\\d{3}[-\\\\s]\\\\d{4}/.test(t) || / ON /i.test(t))) break;\\n        }\\n        if (!card) continue;\\n\\n        const text = clean(card.innerText);\\n        const phone = (text.match(/(?:\\\\+?1[\\\\s.-]?)?\\\\(?\\\\d{3}\\\\)?[\\\\s.-]\\\\d{3}[\\\\s.-]\\\\d{4}/) || [''])[0];\\n        const addressLink = [...card.querySelectorAll('a[href*=\\\"google.com\\\"]')][0];\\n        const profileLink = [...card.querySelectorAll('a[href]')]\\n            .find((a) => clean(a.textContent) === organization || clean(a.textContent).includes(organization));\\n        const externalWebsite = [...card.querySelectorAll('a[href]')]\\n            .map((a) => a.href)\\n            .find((href) =>\\n                /^https?:/i.test(href) &&\\n                !/ottawabot\\\\.ca|chambermaster\\\\.com|google\\\\.com/i.test(href)\\n            ) || '';\\n        const paragraphs = [...card.querySelectorAll('p')].map((p) => clean(p.textContent)).filter(Boolean);\\n        const description = paragraphs.sort((a, b) => b.length - a.length)[0] || '';\\n\\n        records.push({\\n            source: 'Ottawa Board of Trade',\\n            organization,\\n            website: externalWebsite,\\n            publicPhone: phone,\\n            generalEmail: '',\\n            address: clean(addressLink?.textContent),\\n            description,\\n            profileUrl: profileLink?.href || context.request.url,\\n            sourcePageUrl: context.request.url,\\n            dateScraped: new Date().toISOString()\\n        });\\n    }\\n    return records;\\n}\\n\",\n      injectJQuery: false,\n      proxyConfiguration: { useApifyProxy: true },\n      headless: true,\n      downloadMedia: false,\n      downloadCss: false,\n      maxPagesPerCrawl: 1,\n      maxRequestRetries: 2,\n      waitUntil: ['networkidle2']\n    }\n  }\n];\nreturn sources.map((s) => ({ json: s }));\n"
+      },
+      "id": "45d1e142-21d7-4fb3-87a2-ccc900ea0a52",
+      "name": "Build Directory Source Inputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/actors/apify~web-scraper/run-sync-get-dataset-items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{$env.APIFY_TOKEN}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.actorInput) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "2508a74c-8267-4bdc-96b5-39f09fcce1fd",
+      "name": "Run Apify Web Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -430,
+        0
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $input.all();\nconst flattened = [];\n\nfor (const item of input) {\n  const payload = item.json?.body ?? item.json;\n  const records = Array.isArray(payload) ? payload : [payload];\n  for (const record of records) {\n    if (!record || !record.organization) continue;\n    flattened.push(record);\n  }\n}\n\nconst clean = (v) => String(v ?? '').replace(/\\s+/g, ' ').trim();\nconst normalizeOrg = (v) => clean(v)\n  .toLowerCase()\n  .replace(/\\b(incorporated|corporation|company|limited|inc|ltd|corp|co)\\b\\.?/g, '')\n  .replace(/[^a-z0-9]+/g, ' ')\n  .trim();\n\nconst domainFromUrl = (value) => {\n  if (!value) return '';\n  try {\n    const u = new URL(/^https?:\\/\\//i.test(value) ? value : `https://${value}`);\n    return u.hostname.toLowerCase().replace(/^www\\./, '');\n  } catch {\n    return '';\n  }\n};\n\nconst techRules = [\n  ['AI & Data', /\\b(ai|artificial intelligence|machine learning|data science|data analytics|analytics|computer vision|natural language|nlp)\\b/i],\n  ['Cybersecurity', /\\b(cyber|cybersecurity|information security|network security|identity|zero trust|security software)\\b/i],\n  ['Cloud & DevOps', /\\b(cloud|devops|infrastructure|platform engineering|managed cloud|kubernetes|hosting)\\b/i],\n  ['Telecom & Networking', /\\b(telecom|telecommunications|networking|network equipment|5g|wireless|optical network)\\b/i],\n  ['Semiconductors & Photonics', /\\b(semiconductor|photonics|microelectronics|chip|silicon|optical)\\b/i],\n  ['Robotics / Hardware / IoT', /\\b(robot|robotics|autonomous|hardware|internet of things|iot|embedded|sensor|electronics)\\b/i],\n  ['Fintech', /\\b(fintech|financial technology|payments|banking software|insurance technology)\\b/i],\n  ['Digital Health', /\\b(digital health|healthtech|medical technology|medtech|health software)\\b/i],\n  ['Clean Technology', /\\b(cleantech|clean technology|renewable|energy technology|climate technology)\\b/i],\n  ['IT Services / Consulting', /\\b(it services|technology consulting|digital transformation|managed services|systems integrator|software consulting)\\b/i],\n  ['Software / SaaS', /\\b(software|saas|platform|application|app development|developer tools|web technology|enterprise applications)\\b/i],\n];\n\nreturn flattened.map((record) => {\n  const source = clean(record.source);\n  const organization = clean(record.organization);\n  const website = clean(record.website);\n  const description = clean(record.description);\n  const address = clean(record.address);\n  const text = `${organization} ${description} ${website}`;\n  let techCategory = 'Other Technology';\n  let techMatch = source === 'Invest Ottawa' || source === 'Ottawa Board of Trade';\n\n  for (const [category, regex] of techRules) {\n    if (regex.test(text)) {\n      techCategory = category;\n      techMatch = true;\n      break;\n    }\n  }\n\n  const domain = domainFromUrl(website);\n  const dedupKey = domain ? `domain:${domain}` : `org:${normalizeOrg(organization)}|${address.toLowerCase()}`;\n  return {\n    json: {\n      Source: source,\n      Organization: organization,\n      Website: website,\n      Domain: domain,\n      'Public Phone': clean(record.publicPhone),\n      'General Email': clean(record.generalEmail),\n      Address: address,\n      Description: description,\n      'Profile URL': clean(record.profileUrl),\n      'Source Page URL': clean(record.sourcePageUrl),\n      'Tech Category': techCategory,\n      'Tech Match': techMatch ? 'Yes' : 'No',\n      'Date Scraped': clean(record.dateScraped) || new Date().toISOString(),\n      'Dedup Key': dedupKey,\n      'Run Notes': '',\n    }\n  };\n});\n"
+      },
+      "id": "87680855-529f-403e-bac0-8395ab2c8cbd",
+      "name": "Normalize Directory Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -170,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.BCO_GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Raw - Directories",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "67793a7e-c6fb-428f-ba0a-b08a82dd741d",
+      "name": "Append Raw Directory Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        100,
+        -130
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL",
+          "name": "BCO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn $input.all()\n  .filter((item) => item.json['Tech Match'] === 'Yes')\n  .map((item) => {\n    const x = item.json;\n    const row = {\n      Organization: x.Organization,\n      'Tech Category': x['Tech Category'],\n      'Dedup Key': x['Dedup Key'],\n      'Date Last Verified': x['Date Scraped'],\n      'Lead Status': 'New',\n      'Duplicate Review': 'Needs Review',\n    };\n\n    const copyIf = (key, value) => {\n      if (value !== undefined && value !== null && String(value).trim() !== '') row[key] = value;\n    };\n    copyIf('Website', x.Website);\n    copyIf('Public Phone', x['Public Phone']);\n    copyIf('General Email', x['General Email']);\n    copyIf('Address', x.Address);\n    copyIf('Description', x.Description);\n\n    if (x.Source === 'Kanata North BA') {\n      row['KNBA Listed'] = 'Yes';\n      row['KNBA Source URL'] = x['Profile URL'] || x['Source Page URL'];\n      row['Ottawa Presence'] = 'Major Office';\n    } else if (x.Source === 'Invest Ottawa') {\n      row['Invest Ottawa Listed'] = 'Yes';\n      row['Invest Ottawa Source URL'] = x['Profile URL'] || x['Source Page URL'];\n      row['Ottawa Presence'] = 'Headquarters';\n    } else if (x.Source === 'Ottawa Board of Trade') {\n      row['Ottawa BOT Listed'] = 'Yes';\n      row['Ottawa BOT Source URL'] = x['Profile URL'] || x['Source Page URL'];\n      row['Ottawa Presence'] = 'Local Office';\n    }\n\n    return { json: row };\n  });\n"
+      },
+      "id": "7c7edcbc-b6c1-4ee2-bff7-95070f236ced",
+      "name": "Filter Tech + Build Master Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        90,
+        110
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.BCO_GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Master Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "Dedup Key"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "afe9fa48-617d-45d0-a75c-5de2056470c3",
+      "name": "Upsert Master Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        360,
+        110
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL",
+          "name": "BCO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Configure before running\n1. Set `APIFY_TOKEN` and `BCO_GOOGLE_SHEET_ID` in the n8n environment.\n2. Reconnect both Google Sheets nodes to the BCO Google credential.\n3. Keep the workbook tab names unchanged.\n4. Run manually and review raw data before scheduling.",
+        "height": 220,
+        "width": 370,
+        "color": 5
+      },
+      "id": "71e067eb-e19d-4aa0-bb5d-21635a39b5d5",
+      "name": "Setup Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -910,
+        -330
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Directory Source Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Directory Source Inputs": {
+      "main": [
+        [
+          {
+            "node": "Run Apify Web Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Apify Web Scraper": {
+      "main": [
+        [
+          {
+            "node": "Normalize Directory Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Directory Results": {
+      "main": [
+        [
+          {
+            "node": "Append Raw Directory Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Tech + Build Master Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Tech + Build Master Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert Master Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0ef4715a-4853-4339-9056-381e1cd07ce3",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

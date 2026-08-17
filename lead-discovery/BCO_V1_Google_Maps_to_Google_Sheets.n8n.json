@@ -1,0 +1,252 @@
+{
+  "name": "BCO V1 - Google Maps Tech Leads to Google Sheets",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c1bbad2a-9ad8-426c-8714-fe9842aeda44",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -820,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst searches = [\n  'software companies',\n  'artificial intelligence companies',\n  'cybersecurity companies',\n  'cloud computing companies',\n  'telecommunications companies',\n  'robotics companies'\n];\n\nreturn [{\n  json: {\n    actorInput: {\n      searchStringsArray: searches,\n      locationQuery: 'Ottawa, Ontario, Canada',\n      maxCrawledPlacesPerSearch: 20,\n      language: 'en',\n      searchMatching: 'all',\n      website: 'allPlaces',\n      skipClosedPlaces: false,\n      scrapePlaceDetailPage: false,\n      scrapeContacts: false,\n      includeWebResults: false,\n      scrapeDirectories: false,\n      maxReviews: 0\n    }\n  }\n}];\n"
+      },
+      "id": "7c36c7a6-7861-4afd-aefd-db6ff5a564f9",
+      "name": "Build Cost-Limited Maps Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/actors/compass~crawler-google-places/run-sync-get-dataset-items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{$env.APIFY_TOKEN}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.actorInput) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "8e7059e4-e7b1-4b96-af61-4a16c3233f94",
+      "name": "Run Google Maps Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        0
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst payloads = [];\nfor (const item of $input.all()) {\n  const payload = item.json?.body ?? item.json;\n  if (Array.isArray(payload)) payloads.push(...payload);\n  else payloads.push(payload);\n}\n\nconst clean = (v) => String(v ?? '').replace(/\\s+/g, ' ').trim();\nconst domainFromUrl = (value) => {\n  if (!value) return '';\n  try {\n    const u = new URL(/^https?:\\/\\//i.test(value) ? value : `https://${value}`);\n    return u.hostname.toLowerCase().replace(/^www\\./, '');\n  } catch {\n    return '';\n  }\n};\nconst normalizeOrg = (v) => clean(v)\n  .toLowerCase()\n  .replace(/\\b(incorporated|corporation|company|limited|inc|ltd|corp|co)\\b\\.?/g, '')\n  .replace(/[^a-z0-9]+/g, ' ')\n  .trim();\n\nreturn payloads\n  .filter(Boolean)\n  .map((p) => {\n    const organization = clean(p.title ?? p.name);\n    const website = clean(p.website ?? p.websiteUrl);\n    const address = clean(p.address ?? p.street);\n    const domain = domainFromUrl(website);\n    const placeId = clean(p.placeId ?? p.place_id);\n    const mapsUrl = clean(p.url ?? p.googleMapsUrl);\n    const query = clean(p.searchString ?? p.searchQuery ?? p.searchTerm);\n    const closed = p.permanentlyClosed ? 'Permanently Closed' :\n      p.temporarilyClosed ? 'Temporarily Closed' :\n      clean(p.businessStatus ?? 'Open / Unknown');\n    const dedupKey = domain\n      ? `domain:${domain}`\n      : placeId\n        ? `place:${placeId}`\n        : `org:${normalizeOrg(organization)}|${address.toLowerCase()}`;\n\n    return {\n      json: {\n        'Search Query': query,\n        Organization: organization,\n        Category: clean(p.categoryName ?? p.category),\n        Website: website,\n        Domain: domain,\n        'Public Phone': clean(p.phone ?? p.phoneNumber),\n        Address: address,\n        City: clean(p.city),\n        Province: clean(p.state ?? p.province),\n        'Postal Code': clean(p.postalCode ?? p.zip),\n        'Google Place ID': placeId,\n        'Google Maps URL': mapsUrl,\n        Rating: p.totalScore ?? p.rating ?? '',\n        'Review Count': p.reviewsCount ?? p.numberOfReviews ?? '',\n        'Closed Status': closed,\n        'Date Scraped': new Date().toISOString(),\n        'Dedup Key': dedupKey,\n        'Run Notes': ''\n      }\n    };\n  })\n  .filter((item) => item.json.Organization);\n"
+      },
+      "id": "36c390f4-700f-4775-9f00-6acae3a263d5",
+      "name": "Normalize Google Maps Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -90,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.BCO_GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Raw - Google Maps",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f2af707b-94ad-4572-a47d-5f68f1d9292b",
+      "name": "Append Raw Maps Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        170,
+        -130
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL",
+          "name": "BCO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst categoryRules = [\n  ['AI & Data', /\\b(ai|artificial intelligence|machine learning|data|analytics)\\b/i],\n  ['Cybersecurity', /\\b(cyber|security)\\b/i],\n  ['Cloud & DevOps', /\\b(cloud|devops|hosting|infrastructure)\\b/i],\n  ['Telecom & Networking', /\\b(telecom|network|wireless|5g)\\b/i],\n  ['Semiconductors & Photonics', /\\b(semiconductor|photonics|chip|optical)\\b/i],\n  ['Robotics / Hardware / IoT', /\\b(robot|hardware|iot|embedded|electronics|autonomous)\\b/i],\n  ['Fintech', /\\b(fintech|payments|banking)\\b/i],\n  ['Digital Health', /\\b(health|medical|medtech)\\b/i],\n  ['Clean Technology', /\\b(clean|energy|climate|renewable)\\b/i],\n  ['IT Services / Consulting', /\\b(it service|consulting|managed service|digital transformation)\\b/i],\n  ['Software / SaaS', /\\b(software|saas|application|platform)\\b/i],\n];\n\nreturn $input.all()\n  .filter((item) => !/Permanently Closed|Temporarily Closed/i.test(item.json['Closed Status']))\n  .map((item) => {\n    const x = item.json;\n    const text = `${x['Search Query']} ${x.Category} ${x.Organization}`;\n    let techCategory = 'Other Technology';\n    for (const [category, regex] of categoryRules) {\n      if (regex.test(text)) { techCategory = category; break; }\n    }\n\n    const row = {\n      Organization: x.Organization,\n      'Tech Category': techCategory,\n      'Google Maps Listed': 'Yes',\n      'Google Maps URL': x['Google Maps URL'],\n      'Search Query': x['Search Query'],\n      'Date Last Verified': x['Date Scraped'],\n      'Lead Status': 'New',\n      'Dedup Key': x['Dedup Key'],\n      'Duplicate Review': 'Needs Review'\n    };\n\n    const copyIf = (key, value) => {\n      if (value !== undefined && value !== null && String(value).trim() !== '') row[key] = value;\n    };\n    copyIf('Website', x.Website);\n    copyIf('Public Phone', x['Public Phone']);\n    copyIf('Address', x.Address);\n    copyIf('City', x.City);\n    copyIf('Province', x.Province);\n    copyIf('Postal Code', x['Postal Code']);\n    copyIf('Rating', x.Rating);\n    copyIf('Review Count', x['Review Count']);\n    copyIf('Ottawa Presence', 'Local Office');\n\n    return { json: row };\n  });\n"
+      },
+      "id": "3eae4163-f8c5-42ac-9d40-ea95c47eab55",
+      "name": "Build Master Map Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        110
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{$env.BCO_GOOGLE_SHEET_ID}}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Master Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "Dedup Key"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f0c49d15-633d-4867-ab83-01ff25fc71f8",
+      "name": "Upsert Master Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        430,
+        110
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL",
+          "name": "BCO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Cost guardrail\nThis workflow runs **6 searches × 20 results** (maximum 120 raw records). It does not scrape reviews, contacts, images, directories, or place-detail pages. Keep it manual until the output and cost are verified.",
+        "height": 200,
+        "width": 370,
+        "color": 5
+      },
+      "id": "e00463e4-8b89-46ce-9960-b8f5acfb1485",
+      "name": "Cost Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -820,
+        -300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Cost-Limited Maps Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cost-Limited Maps Input": {
+      "main": [
+        [
+          {
+            "node": "Run Google Maps Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Google Maps Scraper": {
+      "main": [
+        [
+          {
+            "node": "Normalize Google Maps Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Google Maps Results": {
+      "main": [
+        [
+          {
+            "node": "Append Raw Maps Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Master Map Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Master Map Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert Master Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "98ab7594-a768-4083-92e0-ceb785cbfe67",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

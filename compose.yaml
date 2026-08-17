@@ -1,0 +1,35 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: bco-n8n
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:5678:5678"
+
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_SECURE_COOKIE=false
+
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - TZ=${TZ}
+
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=true
+
+      # BCO lead generation
+      - APIFY_TOKEN=${APIFY_TOKEN}
+      - BCO_GOOGLE_SHEET_ID=${BCO_GOOGLE_SHEET_ID}
+
+      # Allows our workflow to read $env variables
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./local-files:/files
+
+volumes:
+  n8n_data:
